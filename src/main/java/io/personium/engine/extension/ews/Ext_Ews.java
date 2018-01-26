@@ -43,6 +43,10 @@ import microsoft.exchange.webservices.data.property.complex.Attendee;
 import microsoft.exchange.webservices.data.search.CalendarView;
 import microsoft.exchange.webservices.data.search.FindItemsResults;
 
+import microsoft.exchange.webservices.data.core.enumeration.service.SendInvitationsOrCancellationsMode;
+import microsoft.exchange.webservices.data.core.enumeration.service.ConflictResolutionMode;
+import microsoft.exchange.webservices.data.core.enumeration.service.DeleteMode;
+
 import java.io.IOException;
 import java.net.Proxy;
 import java.net.URI;
@@ -50,8 +54,10 @@ import java.util.Map;
 import java.util.Date;
 import java.util.TimeZone;
 import java.util.ArrayList;
+import java.util.Map.Entry;
 import java.text.SimpleDateFormat;
 
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * Engine-Extension EWS.
@@ -138,7 +144,7 @@ public class Ext_Ews extends AbstractExtensionScriptableObject {
      * @throws Exception
      */
     @JSFunction
-    public ArrayList<NativeObject> findAppointments(String reqStartDate, String reqEndDate, String maxNumber) throws Exception {
+    public ArrayList<NativeObject> findVEvents(String reqStartDate, String reqEndDate, String maxNumber) throws Exception {
 
       ArrayList<NativeObject> results = new ArrayList<NativeObject>();
       SimpleDateFormat utcFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
@@ -188,6 +194,132 @@ public class Ext_Ews extends AbstractExtensionScriptableObject {
         }
         return results;
     }
+
+
+    /**
+     *
+     * @param vEvent { key = (srcId, dtstart, dtend, summary, location, description, attendees)}
+     * @throws Exception
+     */
+    @JSFunction
+    public NativeObject updateVEvent(NativeObject vEvent) throws Exception {
+
+        SimpleDateFormat utcFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+        utcFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+
+        Appointment appointment = null;
+        NativeObject result = new NativeObject();
+        String Uid = null;
+
+        try {
+
+            for (Entry<Object, Object> ve : vEvent.entrySet()) {
+                if (ve.getKey().toString().equals("srcId")) {
+                    Uid = ve.getValue().toString();
+                    appointment = Appointment.bind(service, new ItemId(Uid));
+                }
+            }
+
+            appointment.setSubject("");
+            appointment.setLocation("");
+            appointment.setBody(MessageBody.getMessageBodyFromText(""));
+            appointment.getRequiredAttendees().clear();
+
+            for (Entry<Object, Object> ve : vEvent.entrySet()) {
+                switch (ve.getKey().toString()) {
+                case "dtstart":
+                    Date startDate = utcFormat.parse(ve.getValue().toString());
+                    appointment.setStart(startDate);
+                    break;
+                case "dtend":
+                    Date endDate = utcFormat.parse(ve.getValue().toString());
+                    appointment.setEnd(endDate);
+                    break;
+                case "summary":
+                    appointment.setSubject(ve.getValue().toString());
+                    break;
+                case "location":
+                    appointment.setLocation(ve.getValue().toString());
+                    break;
+                case "description":
+                    appointment.setBody(MessageBody.getMessageBodyFromText(ve.getValue().toString()));
+                    break;
+                case "attendees":
+                    this.getLogger().info(ve.getValue().toString());
+                    String[] atten = StringUtils.split(StringUtils.deleteWhitespace(StringUtils.strip(ve.getValue().toString(), "[]")), ",");
+                    for (int i=0; i < atten.length; i++) {
+                        appointment.getRequiredAttendees().add(atten[i]);
+                    }
+                    break;
+                    //default:
+                   }
+               }
+
+               //appointment.update(ConflictResolutionMode.AlwaysOverwrite, SendInvitationsOrCancellationsMode.SendToNone);
+               appointment.update(ConflictResolutionMode.AutoResolve);
+
+               Appointment appt = Appointment.bind(service, new ItemId(Uid));
+
+               result.put("Uid", result, appt.getId().getUniqueId());
+               result.put("ICalUid", result, appt.getICalUid());
+               result.put("Subject", result, appt.getSubject());
+               result.put("Start", result, utcFormat.format(appt.getStart()).toString());
+               result.put("End", result, utcFormat.format(appt.getEnd()).toString());
+               result.put("Body", result, appt.getBody().toString());
+               result.put("Location", result, appt.getLocation());
+               result.put("Organizer", result, appt.getOrganizer().getAddress());
+               ArrayList<String> attendees = new ArrayList<String>();
+               for (Attendee attendee : appt.getRequiredAttendees().getItems()) {
+                   attendees.add(attendee.getAddress());
+               }
+               result.put("Attendees", result, attendees.toString());
+               result.put("Updated", result, utcFormat.format(appt.getICalDateTimeStamp()).toString());
+
+
+           } catch (Exception e) {
+               String message = "An error occurred.";
+               this.getLogger().warn(message, e);
+               String errorMessage = String.format("%s Cause: [%s]",
+                       message, e.getClass().getName() + ": " + e.getMessage());
+               throw ExtensionErrorConstructor.construct(errorMessage);
+           }
+
+           return result;
+       }
+
+
+       /**
+        *
+        * @param vEvent { key = (srcId, dtstart, dtend, summary, location, description, attendees)}
+        * @throws Exception
+        */
+       @JSFunction
+       public String deleteVEvent(NativeObject vEvent) throws Exception {
+
+           Appointment appointment = null;
+           String Uid = null;
+
+           try {
+
+               for (Entry<Object, Object> ve : vEvent.entrySet()) {
+                   if (ve.getKey().toString().equals("srcId")) {
+                       Uid = ve.getValue().toString();
+                       appointment = Appointment.bind(service, new ItemId(Uid));
+                   }
+               }
+
+               appointment.delete(DeleteMode.MoveToDeletedItems);
+
+           } catch (Exception e) {
+               String message = "An error occurred.";
+               this.getLogger().warn(message, e);
+               String errorMessage = String.format("%s Cause: [%s]",
+                       message, e.getClass().getName() + ": " + e.getMessage());
+               throw ExtensionErrorConstructor.construct(errorMessage);
+           }
+
+           return "OK";
+       }
 
 
 }
