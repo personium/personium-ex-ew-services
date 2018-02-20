@@ -30,9 +30,17 @@ import org.slf4j.LoggerFactory;
 import microsoft.exchange.webservices.data.core.ExchangeService;
 import microsoft.exchange.webservices.data.core.PropertySet;
 import microsoft.exchange.webservices.data.core.enumeration.misc.ExchangeVersion;
+import microsoft.exchange.webservices.data.core.enumeration.service.SendInvitationsOrCancellationsMode;
+import microsoft.exchange.webservices.data.core.enumeration.service.ConflictResolutionMode;
+import microsoft.exchange.webservices.data.core.enumeration.service.DeleteMode;
+import microsoft.exchange.webservices.data.core.enumeration.search.SortDirection;
+import microsoft.exchange.webservices.data.core.enumeration.search.LogicalOperator;
 import microsoft.exchange.webservices.data.core.enumeration.property.WellKnownFolderName;
+import microsoft.exchange.webservices.data.core.enumeration.property.BasePropertySet;
+import microsoft.exchange.webservices.data.core.service.item.Item;
 import microsoft.exchange.webservices.data.core.service.item.Appointment;
 import microsoft.exchange.webservices.data.core.service.folder.CalendarFolder;
+import microsoft.exchange.webservices.data.core.service.schema.ItemSchema;
 import microsoft.exchange.webservices.data.credential.ExchangeCredentials;
 import microsoft.exchange.webservices.data.credential.WebCredentials;
 import microsoft.exchange.webservices.data.autodiscover.IAutodiscoverRedirectionUrl;
@@ -42,13 +50,11 @@ import microsoft.exchange.webservices.data.property.complex.AttendeeCollection;
 import microsoft.exchange.webservices.data.property.complex.Attendee;
 import microsoft.exchange.webservices.data.search.CalendarView;
 import microsoft.exchange.webservices.data.search.FindItemsResults;
-
-import microsoft.exchange.webservices.data.core.enumeration.service.SendInvitationsOrCancellationsMode;
-import microsoft.exchange.webservices.data.core.enumeration.service.ConflictResolutionMode;
-import microsoft.exchange.webservices.data.core.enumeration.service.DeleteMode;
+import microsoft.exchange.webservices.data.search.ItemView;
+import microsoft.exchange.webservices.data.search.filter.SearchFilter;
 
 import java.io.IOException;
-import java.net.Proxy;
+//import java.net.Proxy;
 import java.net.URI;
 import java.util.Map;
 import java.util.Date;
@@ -146,43 +152,44 @@ public class Ext_Ews extends AbstractExtensionScriptableObject {
     @JSFunction
     public ArrayList<NativeObject> findVEvents(String reqStartDate, String reqEndDate, String maxNumber) throws Exception {
 
-      ArrayList<NativeObject> results = new ArrayList<NativeObject>();
-      SimpleDateFormat utcFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
-      utcFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+        ArrayList<NativeObject> results = new ArrayList<NativeObject>();
+        SimpleDateFormat utcFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+        utcFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
 
-      try {
-          Date startDate = utcFormat.parse(reqStartDate);
-          Date endDate = utcFormat.parse(reqEndDate);
-          int maxReturned = Integer.parseInt(maxNumber);
-          CalendarFolder cf = CalendarFolder.bind(service, WellKnownFolderName.Calendar);
-          FindItemsResults<Appointment> findResults = cf.findAppointments(new CalendarView(startDate, endDate, maxReturned));
+        try {
+            Date startDate = utcFormat.parse(reqStartDate);
+            Date endDate = utcFormat.parse(reqEndDate);
+            int maxReturned = Integer.parseInt(maxNumber);
+            CalendarFolder cf = CalendarFolder.bind(service, WellKnownFolderName.Calendar);
+            FindItemsResults<Appointment> findResults = cf.findAppointments(new CalendarView(startDate, endDate, maxReturned));
 
-          // Set NativeObject.
-          results = new ArrayList<NativeObject>();
-          NativeObject result = null;
+            // Set NativeObject.
+            //results = new ArrayList<NativeObject>();
+            NativeObject result = null;
 
-          for (Appointment appt : findResults.getItems()) {
-              appt.load(PropertySet.FirstClassProperties);
-              result = new NativeObject();
+            for (Appointment appt : findResults.getItems()) {
+                appt.load(PropertySet.FirstClassProperties);
+                result = new NativeObject();
 
-              result.put("Uid", result, appt.getId().getUniqueId());
-              result.put("ICalUid", result, appt.getICalUid());
-              result.put("Subject", result, appt.getSubject());
-              result.put("Start", result, utcFormat.format(appt.getStart()).toString());
-              result.put("End", result, utcFormat.format(appt.getEnd()).toString());
-              result.put("Body", result, appt.getBody().toString());
-              result.put("Location", result, appt.getLocation());
-              result.put("Organizer", result, appt.getOrganizer().getAddress());
-              ArrayList<String> attendees = new ArrayList<String>();
-              for (Attendee attendee : appt.getRequiredAttendees().getItems()) {
-                  attendees.add(attendee.getAddress());
-              }
-              result.put("Attendees", result, attendees.toString());
-              result.put("Updated", result, utcFormat.format(appt.getICalDateTimeStamp()).toString());
+                result.put("Uid", result, appt.getId().getUniqueId());
+                result.put("ICalUid", result, appt.getICalUid());
+                result.put("Subject", result, appt.getSubject());
+                result.put("Start", result, utcFormat.format(appt.getStart()).toString());
+                result.put("End", result, utcFormat.format(appt.getEnd()).toString());
+                result.put("Body", result, appt.getBody().toString());
+                result.put("Location", result, appt.getLocation());
+                result.put("Organizer", result, appt.getOrganizer().getAddress());
+                ArrayList<String> attendees = new ArrayList<String>();
+                for (Attendee attendee : appt.getRequiredAttendees().getItems()) {
+                    attendees.add(attendee.getAddress());
+                }
+                result.put("Attendees", result, attendees.toString());
+                //result.put("Updated", result, utcFormat.format(appt.getICalDateTimeStamp()).toString());
+                result.put("Updated", result, utcFormat.format(appt.getLastModifiedTime()).toString());
 
-              results.add(result);
+                results.add(result);
 
-          }
+            }
 
 
         } catch (Exception e) {
@@ -193,6 +200,84 @@ public class Ext_Ews extends AbstractExtensionScriptableObject {
             throw ExtensionErrorConstructor.construct(errorMessage);
         }
         return results;
+    }
+
+
+    /**
+     *
+     * @param vEvent { key = (dtstart, dtend, summary, location, description, attendees)}
+     * @throws Exception
+     */
+    @JSFunction
+    public NativeObject createVEvent(NativeObject vEvent) throws Exception {
+
+        SimpleDateFormat utcFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+        utcFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+
+        NativeObject result = new NativeObject();
+
+        try {
+
+            Appointment appointment = new Appointment(service);
+
+            for (Entry<Object, Object> ve : vEvent.entrySet()) {
+                switch (ve.getKey().toString()) {
+                case "dtstart":
+                    Date startDate = utcFormat.parse(ve.getValue().toString());
+                    appointment.setStart(startDate);
+                    break;
+                case "dtend":
+                    Date endDate = utcFormat.parse(ve.getValue().toString());
+                    appointment.setEnd(endDate);
+                    break;
+                case "summary":
+                    appointment.setSubject(ve.getValue().toString());
+                    break;
+                case "location":
+                    appointment.setLocation(ve.getValue().toString());
+                    break;
+                case "description":
+                    appointment.setBody(MessageBody.getMessageBodyFromText(ve.getValue().toString()));
+                    break;
+                case "attendees":
+                    this.getLogger().info(ve.getValue().toString());
+                    String[] atten = StringUtils.split(StringUtils.deleteWhitespace(StringUtils.strip(ve.getValue().toString(), "[]")), ",");
+                    for (int i=0; i < atten.length; i++) {
+                        appointment.getRequiredAttendees().add(atten[i]);
+                    }
+                    break;
+                 //default:
+                }
+            }
+
+            appointment.save();
+
+            appointment.load(PropertySet.FirstClassProperties);
+            result.put("Uid", result, appointment.getId().getUniqueId());
+            result.put("ICalUid", result, appointment.getICalUid());
+            result.put("Subject", result, appointment.getSubject());
+            result.put("Start", result, utcFormat.format(appointment.getStart()).toString());
+            result.put("End", result, utcFormat.format(appointment.getEnd()).toString());
+            result.put("Body", result, appointment.getBody().toString());
+            result.put("Location", result, appointment.getLocation());
+            result.put("Organizer", result, appointment.getOrganizer().getAddress());
+            ArrayList<String> attendees = new ArrayList<String>();
+            for (Attendee attendee : appointment.getRequiredAttendees().getItems()) {
+                attendees.add(attendee.getAddress());
+            }
+            result.put("Attendees", result, attendees.toString());
+            result.put("Updated", result, utcFormat.format(appointment.getLastModifiedTime()).toString());
+
+
+        } catch (Exception e) {
+            String message = "An error occurred.";
+            this.getLogger().warn(message, e);
+            String errorMessage = String.format("%s Cause: [%s]",
+                    message, e.getClass().getName() + ": " + e.getMessage());
+            throw ExtensionErrorConstructor.construct(errorMessage);
+        }
+
+        return result;
     }
 
 
@@ -251,75 +336,72 @@ public class Ext_Ews extends AbstractExtensionScriptableObject {
                         appointment.getRequiredAttendees().add(atten[i]);
                     }
                     break;
-                    //default:
-                   }
-               }
+                //default:
+                }
+            }
 
-               //appointment.update(ConflictResolutionMode.AlwaysOverwrite, SendInvitationsOrCancellationsMode.SendToNone);
-               appointment.update(ConflictResolutionMode.AutoResolve);
+            //appointment.update(ConflictResolutionMode.AlwaysOverwrite, SendInvitationsOrCancellationsMode.SendToNone);
+            appointment.update(ConflictResolutionMode.AutoResolve);
 
-               Appointment appt = Appointment.bind(service, new ItemId(Uid));
+            result.put("Uid", result, appointment.getId().getUniqueId());
+            result.put("ICalUid", result, appointment.getICalUid());
+            result.put("Subject", result, appointment.getSubject());
+            result.put("Start", result, utcFormat.format(appointment.getStart()).toString());
+            result.put("End", result, utcFormat.format(appointment.getEnd()).toString());
+            result.put("Body", result, appointment.getBody().toString());
+            result.put("Location", result, appointment.getLocation());
+            result.put("Organizer", result, appointment.getOrganizer().getAddress());
+            ArrayList<String> attendees = new ArrayList<String>();
+            for (Attendee attendee : appointment.getRequiredAttendees().getItems()) {
+                attendees.add(attendee.getAddress());
+            }
+            result.put("Attendees", result, attendees.toString());
+            result.put("Updated", result, utcFormat.format(appointment.getLastModifiedTime()).toString());
 
-               result.put("Uid", result, appt.getId().getUniqueId());
-               result.put("ICalUid", result, appt.getICalUid());
-               result.put("Subject", result, appt.getSubject());
-               result.put("Start", result, utcFormat.format(appt.getStart()).toString());
-               result.put("End", result, utcFormat.format(appt.getEnd()).toString());
-               result.put("Body", result, appt.getBody().toString());
-               result.put("Location", result, appt.getLocation());
-               result.put("Organizer", result, appt.getOrganizer().getAddress());
-               ArrayList<String> attendees = new ArrayList<String>();
-               for (Attendee attendee : appt.getRequiredAttendees().getItems()) {
-                   attendees.add(attendee.getAddress());
-               }
-               result.put("Attendees", result, attendees.toString());
-               result.put("Updated", result, utcFormat.format(appt.getICalDateTimeStamp()).toString());
+        } catch (Exception e) {
+            String message = "An error occurred.";
+            this.getLogger().warn(message, e);
+            String errorMessage = String.format("%s Cause: [%s]",
+                    message, e.getClass().getName() + ": " + e.getMessage());
+            throw ExtensionErrorConstructor.construct(errorMessage);
+        }
 
-
-           } catch (Exception e) {
-               String message = "An error occurred.";
-               this.getLogger().warn(message, e);
-               String errorMessage = String.format("%s Cause: [%s]",
-                       message, e.getClass().getName() + ": " + e.getMessage());
-               throw ExtensionErrorConstructor.construct(errorMessage);
-           }
-
-           return result;
-       }
+        return result;
+    }
 
 
-       /**
-        *
-        * @param vEvent { key = (srcId, dtstart, dtend, summary, location, description, attendees)}
-        * @throws Exception
-        */
-       @JSFunction
-       public String deleteVEvent(NativeObject vEvent) throws Exception {
+    /**
+     *
+     * @param vEvent { key = (srcId, dtstart, dtend, summary, location, description, attendees)}
+     * @throws Exception
+     */
+    @JSFunction
+    public String deleteVEvent(NativeObject vEvent) throws Exception {
 
-           Appointment appointment = null;
-           String Uid = null;
+        Appointment appointment = null;
+        String Uid = null;
 
-           try {
+        try {
 
-               for (Entry<Object, Object> ve : vEvent.entrySet()) {
-                   if (ve.getKey().toString().equals("srcId")) {
-                       Uid = ve.getValue().toString();
-                       appointment = Appointment.bind(service, new ItemId(Uid));
-                   }
-               }
+            for (Entry<Object, Object> ve : vEvent.entrySet()) {
+                if (ve.getKey().toString().equals("srcId")) {
+                    Uid = ve.getValue().toString();
+                    appointment = Appointment.bind(service, new ItemId(Uid));
+                }
+            }
 
-               appointment.delete(DeleteMode.MoveToDeletedItems);
+            appointment.delete(DeleteMode.MoveToDeletedItems);
 
-           } catch (Exception e) {
-               String message = "An error occurred.";
-               this.getLogger().warn(message, e);
-               String errorMessage = String.format("%s Cause: [%s]",
-                       message, e.getClass().getName() + ": " + e.getMessage());
-               throw ExtensionErrorConstructor.construct(errorMessage);
-           }
+        } catch (Exception e) {
+            String message = "An error occurred.";
+            this.getLogger().warn(message, e);
+            String errorMessage = String.format("%s Cause: [%s]",
+                    message, e.getClass().getName() + ": " + e.getMessage());
+            throw ExtensionErrorConstructor.construct(errorMessage);
+        }
 
-           return "OK";
-       }
+        return "OK";
+    }
 
 
 }
